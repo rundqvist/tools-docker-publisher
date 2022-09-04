@@ -1,0 +1,197 @@
+#!/bin/bash
+
+# Resolve path to Dockerfile
+#
+while getopts ":p:" arg
+do
+    [ "$arg" == "p" ] && DOCKERFILE=$OPTARG
+done
+OPTIND=0
+
+[ -z "$DOCKERFILE" ] && DOCKERFILE="./Dockerfile";
+if [[ "$DOCKERFILE" != *"/Dockerfile" ]]
+then
+    [[ "$DOCKERFILE" != *"/" ]] && DOCKERFILE="$DOCKERFILE/"
+    DOCKERFILE="$DOCKERFILE""Dockerfile"
+fi
+
+DOCKERDIR="$(echo "$DOCKERFILE" | sed 's/\(.*\)Dockerfile/\1/g')"
+
+if [ ! -f "$DOCKERFILE" ]
+then
+   echo "No dockerfile found in path: '$DOCKERDIR'."
+   exit 1;
+fi
+
+cd $DOCKERDIR
+[ -z "$PWD" ] && PWD="$(pwd)"
+
+# Set default values
+#
+USER=$(echo "$PWD" | rev | cut -d '/' -f 2 | rev) # Set user to second last directory in path
+NAME=$(echo "$PWD" | rev | cut -d '/' -f 1 | rev) # Set name to last directory in path
+ARCH="linux/amd64,linux/arm64,linux/ppc64le,linux/s390x,linux/386,linux/arm/v7,linux/arm/v6" # Default to all supported platforms
+TAGRELEASE="latest"
+TAGDEV="dev"
+
+GITENABLED=true
+GITMASTER="master"
+GITALLOWTAG=true
+GITALLOWMASTER=false
+GITALLOWBRANCH=false
+FORCE=false
+
+# Parse configuration file
+#
+if [ -f ./.docker-publisher.conf ]
+then
+    count=0
+    while IFS="" read -r line || [ -n "$line" ]
+    do
+        # Remove comments and trim line
+        pair=$(echo $line | sed 's/\(.*\)#\(.*\)/\1/g' | sed 's/ *$//g')
+
+        # Split key/value
+        key="$( echo $(cut -d '=' -f 1 <<< "$pair" ) | sed 's/ *$//g')"
+        value=$( echo $(cut -d '=' -f 2- <<< "$pair") | sed 's/ *$//g')
+
+        count=$((count+1))
+        if [ -z "$pair" ]
+        then
+            # Empty row, skip
+            continue
+        elif [[ "$pair" != *"="* ]] || [[ "$key" == *" "* ]]
+        then
+            # No value or space in key, error
+            echo "Configuration error in line $count ('$pair')"
+            exit 1;
+        fi
+
+        # Fill values from config file
+        case "$key" in
+            user) USER=$value;;
+            name) NAME=$value;;
+            arch|architecture) ARCH=$value;;
+            tagrelease) TAGRELEASE=$value;;
+            tagdev) TAGDEV=$value;;
+            gitenabled) GITENABLED=$value;;
+            gitmaster) GITMASTER=$value;;
+            gitallowtag) GITALLOWTAG=$value;;
+            gitallowmaster) GITALLOWMASTER=$value;;
+            gitallowbranch) GITALLOWBRANCH=$value;;
+        esac
+    done < ./.docker-publisher.conf
+fi
+
+# Override existing values with values from arguments
+#
+while getopts ":u:n:a:t:rd:f" arg
+do
+  case $arg in
+    u) USER=$OPTARG;;
+    n) NAME=$OPTARG;;
+    a) ARCH=$OPTARG;;
+    t) TAG=$(echo $TAG $OPTARG | sed 's/ *$//g');;
+    r) DORELEASE=true;TAG=$(echo $TAG $TAGRELEASE | sed 's/ *$//g');;
+    d) DODEVRELEASE=true;TAG=$(echo $TAG $TAGDEV | sed 's/ *$//g');;
+    f) FORCE=true;;
+  esac
+done
+
+echo ""
+
+if [ "$DORELEASE" == true ]
+then
+    echo "## Releasing image '$USER/$NAME' to docker hub ##"
+    if [ "$DODEVRELEASE" == true ]
+    then
+        echo "Both release and devrelease selected. Choose one."
+        exit 1;
+    fi
+else
+    echo "## Publishing image '$USER/$NAME' to docker hub ##"
+fi
+
+if [ "$GITENABLED" == true ]
+then
+    # Get values from git
+    #
+    if command -v git &> /dev/null
+    then
+
+        if [ "$DORELEASE" == true ]
+        then
+
+            GITBRANCH="$(git status | grep "On branch" | sed 's/On branch \(.*\).*/\1/g')"
+            GITTAG="$(git status | grep "HEAD detached at" | sed 's/HEAD detached at \(.*\).*/\1/g')"
+            echo $GITTAG
+            # If we're on a branch, check if allowed
+            #
+            if [ ! -z "$GITBRANCH" ] && [ "$GITBRANCH" != "$GITMASTER" ] && [ "$GITALLOWBRANCH" != true ] && [ "$FORCE" != true ]
+            then
+                echo "Release from branch '$GITBRANCH' not allowed. Aborting."
+                exit 1;
+            elif [ ! -z "$GITBRANCH" ] && [ "$GITBRANCH" == "$GITMASTER" ] && [ "$GITALLOWMASTER" != true ] && [ "$FORCE" != true ]
+            then
+                echo "Release from master branch '$GITBRANCH' not allowed. Aborting."
+                exit 1;
+            elif [ ! -z "$GITTAG" ] && [ "$GITALLOWTAG" != true ] && [ "$FORCE" != true ]
+            then
+                echo "Release from tag '$GITTAG' not allowed. Aborting."
+                exit 1;
+            fi
+            
+            # If we're on a tag, add it
+            #
+            if [ ! -z "$GITTAG" ]
+            then
+                TAG="$TAG $GITTAG"
+            fi
+        fi
+    else
+        echo "Error. GIT not found. Aborting."
+        exit 1;
+    fi
+else
+    echo "Warning. GIT disabled."
+fi
+
+if [ -z "$ARCH" ]
+then
+    echo "No architecture specified."
+    exit 1;
+elif [ -z "$TAG" ]
+then
+    echo "No tag specified."
+    exit 1;
+fi
+
+echo "Architecture(s): $ARCH"
+
+echo "Tag(s):"
+for tag in $TAG
+do
+    echo "- $USER/$NAME:$tag"
+done
+
+echo ""
+
+read -p "Are you sure? [y/n]: " yn
+case $yn in
+    [Yy]*) ;;  
+    *) echo "Aborted" ; exit 1 ;;
+esac
+
+# Build command
+#
+CMD="docker buildx build"
+CMD="$CMD -f ./Dockerfile"
+CMD="$CMD --platform $ARCH"
+for tag in $TAG
+do
+    CMD="$CMD -t $USER/$NAME:$tag"
+done
+CMD="$CMD --push $DOCKERDIR"
+
+# Execute
+$($CMD)
