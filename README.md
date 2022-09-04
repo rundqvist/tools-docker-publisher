@@ -12,7 +12,7 @@ Tool for invoking 'docker buildx' on linux with configures arguments.
 
 ## Documentation
 ### Configuration file 
-The 'docker-publisher' tool supports pre configuration by creating the file ```.docker-publisher.conf``` file in the same folder as your Dockerfile.
+The ```docker-publisher``` tool supports pre configuration by creating the file ```.docker-publisher.conf``` file in the same folder as your Dockerfile.
 
 | Config | Comment |
 | - | - |
