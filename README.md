@@ -22,7 +22,7 @@ The 'docker-publisher' tool supports pre configuration by creating the file ```.
 | ```tagdev``` | The default tag to use when publishing a development image (default: 'dev') |
 | ```arch``` | Architecture(s) to build and publish |
 | ```gitenabled``` | Enable get values from GIT (default: true) |
-| ```gitmaster``` |  Name of the master/main branch (default: master) |
+| ```gitmaster``` | Name of the master/main branch (default: master) |
 | ```gitallowtag``` | Allow release from git tag (default: true) |
 | ```gitallowmaster``` | Allow release from gitmaster branch (default: false) |
 | ```gitallowbranch``` | Allow release from branch other than gitmaster (default: false) |
