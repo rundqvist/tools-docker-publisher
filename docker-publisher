@@ -30,7 +30,7 @@ cd $DOCKERDIR
 #
 USER=$(echo "$PWD" | rev | cut -d '/' -f 2 | rev) # Set user to second last directory in path
 NAME=$(echo "$PWD" | rev | cut -d '/' -f 1 | rev) # Set name to last directory in path
-ARCH="linux/amd64,linux/arm64,linux/ppc64le,linux/s390x,linux/386,linux/arm/v7,linux/arm/v6" # Default to all supported platforms
+ARCH="" # Default to all supported platforms (takes a second so set it in the end if still empty)
 TAGRELEASE="latest"
 TAGDEV="dev"
 
@@ -148,6 +148,11 @@ else
     echo "Warning. GIT disabled."
 fi
 
+if [ -z "$ARCH" ]
+then
+    ARCH="$(docker buildx ls | grep "default" | sed -n 2p | sed 's/.*running \(.*\).*/\1/g')"
+fi
+
 # Validation
 #
 [ -z "$USER" ] && echo "No username specified." && exit 1;
@@ -155,6 +160,10 @@ fi
 [ -z "$ARCH" ] && echo "No architecture specified." && exit 1;
 [ -z "$TAG" ] && echo "No tag specified." && exit 1;
 [ "$DORELEASE" == true ] && [ "$DODEVRELEASE" == true ] && [ "$FORCE" != true ] && echo "Select release OR dev." && exit 1;
+
+# Format architectures: no spaces and single comma as separator
+#
+ARCH="$(echo $ARCH | sed 's/[, ]\{1,\}/,/g')"
 
 # Summary
 #
