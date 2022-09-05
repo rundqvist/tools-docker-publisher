@@ -15,11 +15,11 @@ then
     DOCKERFILE="$DOCKERFILE""Dockerfile"
 fi
 
-DOCKERDIR="$(echo "$DOCKERFILE" | sed 's/\(.*\)Dockerfile/\1/g')"
+DOCKERDIR="$(echo "$DOCKERFILE" | sed 's/\(.*\)\/Dockerfile/\1/g')"
 
 if [ ! -f "$DOCKERFILE" ]
 then
-   echo "No dockerfile found in path: '$DOCKERDIR'."
+   echo "No dockerfile found in path: '$DOCKERDIR'"
    exit 1;
 fi
 
@@ -85,7 +85,7 @@ fi
 
 # Override existing values with values from arguments
 #
-while getopts ":u:n:a:t:rd:f" arg
+while getopts ":p:u:n:a:t:rdf" arg
 do
   case $arg in
     u) USER=$OPTARG;;
@@ -103,11 +103,6 @@ echo ""
 if [ "$DORELEASE" == true ]
 then
     echo "## Releasing image '$USER/$NAME' to docker hub ##"
-    if [ "$DODEVRELEASE" == true ]
-    then
-        echo "Both release and devrelease selected. Choose one."
-        exit 1;
-    fi
 else
     echo "## Publishing image '$USER/$NAME' to docker hub ##"
 fi
@@ -124,7 +119,7 @@ then
 
             GITBRANCH="$(git status | grep "On branch" | sed 's/On branch \(.*\).*/\1/g')"
             GITTAG="$(git status | grep "HEAD detached at" | sed 's/HEAD detached at \(.*\).*/\1/g')"
-            echo $GITTAG
+
             # If we're on a branch, check if allowed
             #
             if [ ! -z "$GITBRANCH" ] && [ "$GITBRANCH" != "$GITMASTER" ] && [ "$GITALLOWBRANCH" != true ] && [ "$FORCE" != true ]
@@ -143,31 +138,27 @@ then
             
             # If we're on a tag, add it
             #
-            if [ ! -z "$GITTAG" ]
-            then
-                TAG="$TAG $GITTAG"
-            fi
+            [ ! -z "$GITTAG" ] && TAG="$TAG $GITTAG"
         fi
     else
-        echo "Error. GIT not found. Aborting."
+        echo "GIT not found."
         exit 1;
     fi
 else
     echo "Warning. GIT disabled."
 fi
 
-if [ -z "$ARCH" ]
-then
-    echo "No architecture specified."
-    exit 1;
-elif [ -z "$TAG" ]
-then
-    echo "No tag specified."
-    exit 1;
-fi
+# Validation
+#
+[ -z "$USER" ] && echo "No username specified." && exit 1;
+[ -z "$NAME" ] && echo "No repository specified." && exit 1;
+[ -z "$ARCH" ] && echo "No architecture specified." && exit 1;
+[ -z "$TAG" ] && echo "No tag specified." && exit 1;
+[ "$DORELEASE" == true ] && [ "$DODEVRELEASE" == true ] && [ "$FORCE" != true ] && echo "Select release OR dev." && exit 1;
 
+# Summary
+#
 echo "Architecture(s): $ARCH"
-
 echo "Tag(s):"
 for tag in $TAG
 do
@@ -176,6 +167,8 @@ done
 
 echo ""
 
+# Confirmation
+#
 read -p "Are you sure? [y/n]: " yn
 case $yn in
     [Yy]*) ;;  
@@ -194,4 +187,5 @@ done
 CMD="$CMD --push $DOCKERDIR"
 
 # Execute
+#
 $($CMD)
